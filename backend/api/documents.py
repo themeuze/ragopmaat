@@ -82,18 +82,28 @@ async def upload_document(
         processor = DocumentProcessor()
         vectorstore = VectorStore()
         
-        # Process document
-        chunks = processor.process_document(file_path, file_extension[1:])
+        # Process document - new processor returns list of strings
+        chunks = processor.process_document(file_path)
         print(f"Document processing completed, got {len(chunks)} chunks")
         
         if chunks:
-            # Add to vectorstore
-            documents = [chunk['content'] for chunk in chunks]
-            metadatas = [chunk['metadata'] for chunk in chunks]
-            ids = [chunk['id'] for chunk in chunks]
+            # Create metadata for each chunk
+            metadatas = []
+            for i, chunk in enumerate(chunks):
+                metadata = {
+                    'file_path': file_path,
+                    'filename': filename,
+                    'original_filename': file.filename,
+                    'chunk': i + 1,
+                    'user_id': current_user.id,
+                    'upload_date': db_document.uploaded_at.isoformat()
+                }
+                metadatas.append(metadata)
             
-            print(f"Adding {len(documents)} chunks to vectorstore")
-            vectorstore.add_documents(documents, metadatas, ids)
+            # Add to vectorstore
+            print(f"Adding {len(chunks)} chunks to vectorstore")
+            for i, chunk in enumerate(chunks):
+                vectorstore.add_document(chunk, metadatas[i])
             
             # Update document record
             db_document.is_processed = True
@@ -126,6 +136,158 @@ async def upload_document(
         chunk_count=db_document.chunk_count
     )
 
+@router.post("/bulk-upload")
+async def bulk_upload_documents(
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Bulk upload documenten (alleen voor admins)"""
+    # Check if user is admin
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can perform bulk uploads"
+        )
+    
+    # Check file types
+    allowed_types = ['.pdf', '.docx', '.md', '.txt']
+    results = []
+    
+    for file in files:
+        file_extension = os.path.splitext(file.filename)[1].lower()
+        
+        if file_extension not in allowed_types:
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "message": f"Unsupported file type: {file_extension}"
+            })
+            continue
+        
+        try:
+            # Create documents directory if it doesn't exist
+            os.makedirs("/app/documents", exist_ok=True)
+            
+            # Save file
+            filename = f"{current_user.id}_{file.filename}"
+            file_path = f"/app/documents/{filename}"
+            
+            with open(file_path, "wb") as buffer:
+                content = await file.read()
+                buffer.write(content)
+            
+            # Get file size
+            file_size = os.path.getsize(file_path)
+            
+            # Create document record
+            db_document = Document(
+                filename=filename,
+                original_filename=file.filename,
+                file_path=file_path,
+                file_size=file_size,
+                file_type=file_extension[1:],  # Remove the dot
+                user_id=current_user.id
+            )
+            
+            db.add(db_document)
+            db.commit()
+            db.refresh(db_document)
+            
+            # Process document
+            try:
+                print(f"Processing bulk upload document: {file_path}")
+                processor = DocumentProcessor()
+                vectorstore = VectorStore()
+                
+                # Process document - new processor returns list of strings
+                chunks = processor.process_document(file_path)
+                print(f"Document processing completed, got {len(chunks)} chunks")
+                
+                if chunks:
+                    # Create metadata for each chunk
+                    metadatas = []
+                    for i, chunk in enumerate(chunks):
+                        metadata = {
+                            'file_path': file_path,
+                            'filename': filename,
+                            'original_filename': file.filename,
+                            'chunk': i + 1,
+                            'user_id': current_user.id,
+                            'upload_date': db_document.uploaded_at.isoformat()
+                        }
+                        metadatas.append(metadata)
+                    
+                    # Add to vectorstore
+                    print(f"Adding {len(chunks)} chunks to vectorstore")
+                    for i, chunk in enumerate(chunks):
+                        vectorstore.add_document(chunk, metadatas[i])
+                    
+                    # Update document record
+                    db_document.is_processed = True
+                    db_document.chunk_count = len(chunks)
+                    db.commit()
+                    print(f"Document marked as processed with {len(chunks)} chunks")
+                    
+                    results.append({
+                        "filename": file.filename,
+                        "status": "success",
+                        "message": f"Uploaded and processed successfully. Created {len(chunks)} chunks.",
+                        "chunks": len(chunks)
+                    })
+                else:
+                    print("No chunks generated from document")
+                    db_document.is_processed = True
+                    db_document.chunk_count = 0
+                    db.commit()
+                    
+                    results.append({
+                        "filename": file.filename,
+                        "status": "warning",
+                        "message": "Uploaded successfully but no text could be extracted.",
+                        "chunks": 0
+                    })
+                
+            except Exception as e:
+                print(f"Error processing document: {e}")
+                db_document.is_processed = True
+                db_document.chunk_count = 0
+                db.commit()
+                
+                results.append({
+                    "filename": file.filename,
+                    "status": "error",
+                    "message": f"Uploaded but processing failed: {str(e)}",
+                    "chunks": 0
+                })
+                
+        except Exception as e:
+            print(f"Error uploading document {file.filename}: {e}")
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "message": f"Upload failed: {str(e)}",
+                "chunks": 0
+            })
+    
+    # Calculate summary
+    successful = len([r for r in results if r["status"] == "success"])
+    warnings = len([r for r in results if r["status"] == "warning"])
+    errors = len([r for r in results if r["status"] == "error"])
+    total_chunks = sum([r.get("chunks", 0) for r in results if r["status"] == "success"])
+    
+    return {
+        "message": f"Bulk upload completed. {successful} successful, {warnings} warnings, {errors} errors.",
+        "summary": {
+            "total_files": len(files),
+            "successful": successful,
+            "warnings": warnings,
+            "errors": errors,
+            "total_chunks": total_chunks
+        },
+        "results": results
+    }
+
 @router.get("/documents", response_model=List[DocumentResponse])
 def get_documents(
     current_user: User = Depends(get_current_user),
@@ -154,7 +316,7 @@ def delete_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Verwijder een document"""
+    """Verwijder een document en alle gerelateerde chunks"""
     document = db.query(Document).filter(
         Document.id == document_id,
         Document.user_id == current_user.id
@@ -166,12 +328,29 @@ def delete_document(
             detail="Document not found"
         )
     
-    # Delete file
-    if os.path.exists(document.file_path):
-        os.remove(document.file_path)
-    
-    # Delete from database
-    db.delete(document)
-    db.commit()
-    
-    return {"message": "Document deleted successfully"} 
+    try:
+        # Remove chunks from vectorstore
+        vectorstore = VectorStore()
+        vectorstore.remove_document_chunks(document.original_filename)
+        print(f"Removed chunks for document: {document.original_filename}")
+        
+        # Delete file
+        if os.path.exists(document.file_path):
+            os.remove(document.file_path)
+            print(f"Deleted file: {document.file_path}")
+        
+        # Delete from database
+        db.delete(document)
+        db.commit()
+        print(f"Deleted document record: {document.id}")
+        
+        return {"message": "Document deleted successfully"}
+        
+    except Exception as e:
+        print(f"Error deleting document: {e}")
+        # Rollback database changes if vectorstore removal failed
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting document: {str(e)}"
+        ) 

@@ -289,22 +289,24 @@ class OpenAILLM:
             # Bouw de prompt op
             if context:
                 full_prompt = (
-                    "Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk, uitsluitend op basis van de context uit de geüploade documenten.\n"
+                    "Je bent een ervaren AI-assistent die vragen beantwoordt op basis van geüploade documenten. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk, uitsluitend op basis van de context uit de geüploade documenten.\n"
                     "Gebruik alleen informatie die daadwerkelijk in de context staat.\n"
                     "- Geef een helder, zelfstandig antwoord in normaal Nederlands.\n"
                     "- Schrijf als een mens, niet als een robot.\n"
                     "- Gebruik geen opsommingen, geen markdown, geen kopjes, geen verwijzingen naar 'bron 1' of 'bron 2'.\n"
-                    "- Vat relevante informatie samen tot een lopend verhaal, zoals je dat aan een huurder of collega zou uitleggen.\n"
-                    "- Als het antwoord niet in de context staat, zeg dan eerlijk: 'Op basis van de beschikbare documenten kan ik deze vraag niet beantwoorden.'\n\n"
+                    "- Vat relevante informatie samen tot een lopend verhaal.\n"
+                    "- Als de vraag om een samenvatting per document vraagt, geef dan per document een korte, duidelijke samenvatting.\n"
+                    "- Als de vraag echt niet beantwoord kan worden met de beschikbare informatie, zeg dat dan eerlijk.\n\n"
                     f"Context:\n{context}\n\nVraag: {prompt}\n\nAntwoord:"
                 )
             else:
                 full_prompt = (
-                    "Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk.\n"
-                    "Geef een helder, zelfstandig antwoord in normaal Nederlands.\n"
-                    "Schrijf als een mens, niet als een robot.\n"
-                    "Gebruik geen opsommingen, geen markdown, geen kopjes.\n"
-                    "Als je het antwoord niet weet, zeg dat dan eerlijk.\n\n"
+                    "Je bent een ervaren AI-assistent die vragen beantwoordt op basis van geüploade documenten. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk.\n"
+                    "Gebruik alleen informatie die daadwerkelijk in de context staat.\n"
+                    "- Geef een helder, zelfstandig antwoord in normaal Nederlands.\n"
+                    "- Schrijf als een mens, niet als een robot.\n"
+                    "- Gebruik geen opsommingen, geen markdown, geen kopjes.\n"
+                    "- Als je het antwoord niet weet, zeg dat dan eerlijk.\n\n"
                     f"Vraag: {prompt}\n\nAntwoord:"
                 )
             
@@ -334,18 +336,21 @@ class OpenAILLM:
             # Bouw de prompt op
             if context:
                 full_prompt = (
-                    "Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk, uitsluitend op basis van de context uit de geüploade documenten.\n"
+                    "Je bent een ervaren AI-assistent die vragen beantwoordt op basis van geüploade documenten. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk, uitsluitend op basis van de context uit de geüploade documenten.\n"
                     "Gebruik alleen informatie die daadwerkelijk in de context staat.\n"
                     "- Geef een helder, zelfstandig antwoord in normaal Nederlands.\n"
                     "- Schrijf als een mens, niet als een robot.\n"
                     "- Gebruik geen opsommingen, geen markdown, geen kopjes, geen verwijzingen naar 'bron 1' of 'bron 2'.\n"
-                    "- Vat relevante informatie samen tot een lopend verhaal, zoals je dat aan een huurder of collega zou uitleggen.\n"
-                    "- Als het antwoord niet in de context staat, zeg dan eerlijk: 'Op basis van de beschikbare documenten kan ik deze vraag niet beantwoorden.'\n\n"
+                    "- Vat relevante informatie samen tot een lopend verhaal.\n"
+                    "- Voor factuurvragen: zoek specifiek naar bedragen, periodes en kortingen in de context.\n"
+                    "- Als je een factuur ziet met bedragen, geef dan het totaalbedrag en de periode.\n"
+                    "- Als de vraag om een samenvatting per document vraagt, geef dan per document een korte, duidelijke samenvatting.\n"
+                    "- Probeer altijd een nuttig antwoord te geven op basis van de beschikbare informatie.\n\n"
                     f"Context:\n{context}\n\nVraag: {prompt}\n\nAntwoord:"
                 )
             else:
                 full_prompt = (
-                    "Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk.\n"
+                    "Je bent een ervaren AI-assistent die vragen beantwoordt op basis van geüploade documenten. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk.\n"
                     "Geef een helder, zelfstandig antwoord in normaal Nederlands.\n"
                     "Schrijf als een mens, niet als een robot.\n"
                     "Gebruik geen opsommingen, geen markdown, geen kopjes.\n"

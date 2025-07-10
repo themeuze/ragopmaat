@@ -6,8 +6,9 @@ from docx import Document
 import markdown
 import re
 import traceback
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path, convert_from_bytes
 import pytesseract
+from io import BytesIO
 
 class DocumentProcessor:
     def __init__(self):
@@ -15,207 +16,237 @@ class DocumentProcessor:
         self.chunk_size = 2000  # Verhoogd van 1000 naar 2000
         self.chunk_overlap = 200  # Overlap tussen chunks voor betere context
     
-    def process_document(self, file_path: str, file_type: str) -> List[Dict[str, Any]]:
+    def process_document(self, file_path: str, file_content: bytes = None) -> List[str]:
         """Verwerk een document en splits het in chunks"""
-        print(f"[PROCESS DEBUG] file_path={file_path}, file_type={file_type}")
         try:
-            if file_type == 'pdf':
-                print("[PROCESS DEBUG] PDF processing selected")
-                return self._process_pdf(file_path)
-            elif file_type == 'docx':
-                print("[PROCESS DEBUG] DOCX processing selected")
-                return self._process_docx(file_path)
-            elif file_type in ['md', 'txt']:
-                print("[PROCESS DEBUG] Text/MD processing selected")
-                return self._process_text(file_path)
-            else:
-                print(f"[PROCESS DEBUG] Unsupported file type: {file_type}")
-                raise ValueError(f"Unsupported file type: {file_type}")
+            # Extract text based on file type
+            text = self._extract_text(file_path, file_content)
+            if not text:
+                return []
+            
+            # Clean and normalize text
+            text = self._clean_text(text)
+            
+            # Split into chunks with better handling for invoices
+            chunks = self._split_into_chunks(text)
+            
+            print(f"Processed {file_path}: {len(chunks)} chunks created")
+            return chunks
         except Exception as e:
-            print(f"[PROCESS DEBUG] Error processing document {file_path}: {e}")
+            print(f"Error processing document {file_path}: {e}")
             return []
     
-    def _process_pdf(self, file_path: str) -> List[Dict[str, Any]]:
-        """Verwerk PDF bestand, met OCR fallback"""
-        chunks = []
-        try:
-            with open(file_path, 'rb') as file:
-                pdf_reader = PdfReader(file)
-                print(f"[PDF DEBUG] {file_path}: {len(pdf_reader.pages)} pagina's gevonden")
-                # OCR fallback: converteer alle pagina's naar images
-                images = convert_from_path(file_path)
-                for page_num, page in enumerate(pdf_reader.pages):
-                    text = page.extract_text()
-                    if not text or not text.strip():
-                        # OCR fallback
-                        print(f"[PDF DEBUG] Pagina {page_num+1}: geen tekst gevonden, OCR wordt geprobeerd...")
-                        ocr_text = pytesseract.image_to_string(images[page_num], lang='nld+eng')
-                        print(f"[PDF DEBUG] Pagina {page_num+1} OCR: {repr(ocr_text)[:200]}")
-                        text = ocr_text
-                    else:
-                        print(f"[PDF DEBUG] Pagina {page_num+1}: {repr(text)[:200]}")
-                    if text and text.strip():
-                        page_chunks = self._split_text_improved(text, max_length=self.chunk_size, overlap=self.chunk_overlap)
-                        for chunk_num, chunk in enumerate(page_chunks):
-                            chunks.append({
-                                'id': f"{uuid.uuid4()}",
-                                'content': chunk.strip(),
-                                'metadata': {
-                                    'page': page_num + 1,
-                                    'chunk': chunk_num + 1,
-                                    'file_type': 'pdf',
-                                    'file_path': file_path,
-                                    'filename': os.path.basename(file_path)
-                                }
-                            })
-        except Exception as e:
-            print(f"[PDF DEBUG] Error processing PDF {file_path}: {e}")
-            traceback.print_exc()
-        return chunks
+    def _clean_text(self, text: str) -> str:
+        """Clean en normaliseer tekst voor betere verwerking"""
+        # Remove excessive whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Fix common OCR issues in invoices
+        text = re.sub(r'(\d+)\s*,\s*(\d{2})', r'\1,\2', text)  # Fix decimal numbers
+        text = re.sub(r'(\d+)\s*\.\s*(\d{2})', r'\1,\2', text)  # Fix decimal numbers with dots
+        
+        # Normalize common invoice terms
+        replacements = {
+            'betalen': 'betalen',
+            'betaling': 'betaling',
+            'voldoen': 'voldoen',
+            'voldening': 'voldening',
+            'factuur': 'factuur',
+            'rekening': 'rekening',
+            'bedrag': 'bedrag',
+            'totaal': 'totaal',
+            'euro': 'euro',
+            '€': 'euro',
+            'EUR': 'euro'
+        }
+        
+        for old, new in replacements.items():
+            text = re.sub(rf'\b{old}\b', new, text, flags=re.IGNORECASE)
+        
+        return text.strip()
     
-    def _process_docx(self, file_path: str) -> List[Dict[str, Any]]:
-        """Verwerk DOCX bestand"""
+    def _split_into_chunks(self, text: str) -> List[str]:
+        """Split tekst in chunks met betere logica voor facturen"""
+        if not text:
+            return []
+        
+        # Voor facturen: probeer eerst op natuurlijke grenzen te splitsen
         chunks = []
-        try:
-            doc = Document(file_path)
+        
+        # Split op paragrafen (dubbele newlines)
+        paragraphs = re.split(r'\n\s*\n', text)
+        
+        current_chunk = ""
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
             
-            # Extract text from paragraphs
+            # Als deze paragraaf de chunk te groot maakt, start een nieuwe
+            if len(current_chunk) + len(paragraph) > 3000:  # Grotere chunks voor facturen
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                current_chunk = paragraph
+            else:
+                if current_chunk:
+                    current_chunk += "\n\n" + paragraph
+                else:
+                    current_chunk = paragraph
+        
+        # Voeg laatste chunk toe
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        # Als we te weinig chunks hebben, split verder op zinnen
+        if len(chunks) < 2:
+            chunks = []
+            sentences = re.split(r'[.!?]+', text)
+            
+            current_chunk = ""
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                
+                if len(current_chunk) + len(sentence) > 3000:
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    current_chunk = sentence
+                else:
+                    if current_chunk:
+                        current_chunk += ". " + sentence
+                    else:
+                        current_chunk = sentence
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+        
+        # Als laatste redmiddel: fixed-size chunks
+        if not chunks:
+            chunks = [text[i:i+3000] for i in range(0, len(text), 2500)]  # 500 overlap
+        
+        # Clean chunks
+        cleaned_chunks = []
+        for chunk in chunks:
+            chunk = chunk.strip()
+            if len(chunk) > 50:  # Minimum chunk size
+                cleaned_chunks.append(chunk)
+        
+        return cleaned_chunks 
+    
+    def _extract_text(self, file_path: str, file_content: bytes = None) -> str:
+        """Extract tekst uit verschillende bestandstypen"""
+        try:
+            file_type = self._get_file_type(file_path)
+            
+            if file_type == 'pdf':
+                return self._extract_pdf_text(file_path, file_content)
+            elif file_type == 'docx':
+                return self._extract_docx_text(file_path, file_content)
+            elif file_type in ['txt', 'md']:
+                return self._extract_text_file(file_path, file_content)
+            else:
+                print(f"Unsupported file type: {file_type}")
+                return ""
+        except Exception as e:
+            print(f"Error extracting text from {file_path}: {e}")
+            return ""
+    
+    def _get_file_type(self, file_path: str) -> str:
+        """Bepaal bestandstype op basis van extensie"""
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.pdf':
+            return 'pdf'
+        elif ext == '.docx':
+            return 'docx'
+        elif ext == '.txt':
+            return 'txt'
+        elif ext == '.md':
+            return 'md'
+        else:
+            return 'unknown'
+    
+    def _extract_pdf_text(self, file_path: str, file_content: bytes = None) -> str:
+        """Extract tekst uit PDF met OCR fallback"""
+        try:
+            # Use file_content if provided, otherwise read from file
+            if file_content:
+                pdf_reader = PdfReader(BytesIO(file_content))
+            else:
+                # Read file content first to avoid file handle issues
+                with open(file_path, 'rb') as file:
+                    file_content = file.read()
+                pdf_reader = PdfReader(BytesIO(file_content))
+            
+            text_parts = []
+            for page_num, page in enumerate(pdf_reader.pages):
+                text = page.extract_text()
+                if not text or not text.strip():
+                    # OCR fallback
+                    print(f"Page {page_num+1}: no text found, trying OCR...")
+                    try:
+                        if file_content:
+                            images = convert_from_bytes(file_content)
+                        else:
+                            images = convert_from_path(file_path)
+                        
+                        if page_num < len(images):
+                            ocr_text = pytesseract.image_to_string(images[page_num], lang='nld+eng')
+                            text = ocr_text
+                            print(f"Page {page_num+1} OCR successful: {len(text)} characters")
+                        else:
+                            print(f"Page {page_num+1}: no image available for OCR")
+                    except Exception as ocr_error:
+                        print(f"OCR failed for page {page_num+1}: {ocr_error}")
+                        text = ""
+                
+                if text and text.strip():
+                    text_parts.append(text.strip())
+                    print(f"Page {page_num+1}: extracted {len(text)} characters")
+                else:
+                    print(f"Page {page_num+1}: no text extracted")
+            
+            result = '\n\n'.join(text_parts)
+            print(f"Total extracted text: {len(result)} characters")
+            return result
+        except Exception as e:
+            print(f"Error extracting PDF text: {e}")
+            return ""
+    
+    def _extract_docx_text(self, file_path: str, file_content: bytes = None) -> str:
+        """Extract tekst uit DOCX bestand"""
+        try:
+            if file_content:
+                doc = Document(BytesIO(file_content))
+            else:
+                doc = Document(file_path)
+            
             text_parts = []
             for paragraph in doc.paragraphs:
                 if paragraph.text.strip():
                     text_parts.append(paragraph.text)
             
-            full_text = '\n\n'.join(text_parts)
-            
-            # Split into chunks with overlap
-            text_chunks = self._split_text_improved(full_text, max_length=self.chunk_size, overlap=self.chunk_overlap)
-            
-            for chunk_num, chunk in enumerate(text_chunks):
-                chunks.append({
-                    'id': f"{uuid.uuid4()}",
-                    'content': chunk.strip(),
-                    'metadata': {
-                        'chunk': chunk_num + 1,
-                        'file_type': 'docx',
-                        'file_path': file_path,
-                        'filename': os.path.basename(file_path)
-                    }
-                })
+            return '\n\n'.join(text_parts)
         except Exception as e:
-            print(f"Error processing DOCX {file_path}: {e}")
-        
-        return chunks
+            print(f"Error extracting DOCX text: {e}")
+            return ""
     
-    def _process_text(self, file_path: str) -> List[Dict[str, Any]]:
-        """Verwerk tekst bestand (MD, TXT)"""
-        chunks = []
+    def _extract_text_file(self, file_path: str, file_content: bytes = None) -> str:
+        """Extract tekst uit tekst bestand"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-                
-                # Convert markdown to plain text if needed
-                if file_path.endswith('.md'):
-                    content = markdown.markdown(content)
-                    # Remove HTML tags
-                    content = re.sub(r'<[^>]+>', '', content)
-                
-                # Split into chunks with overlap
-                text_chunks = self._split_text_improved(content, max_length=self.chunk_size, overlap=self.chunk_overlap)
-                
-                for chunk_num, chunk in enumerate(text_chunks):
-                    chunks.append({
-                        'id': f"{uuid.uuid4()}",
-                        'content': chunk.strip(),
-                        'metadata': {
-                            'chunk': chunk_num + 1,
-                            'file_type': 'text',
-                            'file_path': file_path,
-                            'filename': os.path.basename(file_path)
-                        }
-                    })
+            if file_content:
+                content = file_content.decode('utf-8')
+            else:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+            
+            # Convert markdown to plain text if needed
+            if file_path.endswith('.md'):
+                content = markdown.markdown(content)
+                # Remove HTML tags
+                content = re.sub(r'<[^>]+>', '', content)
+            
+            return content
         except Exception as e:
-            print(f"Error processing text file {file_path}: {e}")
-        
-        return chunks
-    
-    def _split_text_improved(self, text: str, max_length: int = 2000, overlap: int = 200) -> List[str]:
-        """Verbeterde tekst splitting met overlap en semantische grenzen"""
-        if len(text) <= max_length:
-            return [text]
-        
-        # Clean up text
-        text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
-        text = text.strip()
-        
-        chunks = []
-        start = 0
-        
-        while start < len(text):
-            # Determine end position
-            end = start + max_length
-            
-            if end >= len(text):
-                # Last chunk
-                chunk = text[start:]
-            else:
-                # Try to find a good break point
-                chunk = text[start:end]
-                
-                # Look for paragraph breaks first
-                last_paragraph = chunk.rfind('\n\n')
-                if last_paragraph > max_length * 0.7:  # If we find a paragraph break in the last 30%
-                    chunk = text[start:start + last_paragraph]
-                    end = start + last_paragraph
-                else:
-                    # Look for sentence breaks
-                    last_sentence = chunk.rfind('. ')
-                    if last_sentence > max_length * 0.6:  # If we find a sentence break in the last 40%
-                        chunk = text[start:start + last_sentence + 1]
-                        end = start + last_sentence + 1
-                    else:
-                        # Look for word breaks
-                        last_space = chunk.rfind(' ')
-                        if last_space > max_length * 0.5:  # If we find a space in the last 50%
-                            chunk = text[start:start + last_space]
-                            end = start + last_space
-                        else:
-                            # Force break at max_length
-                            chunk = text[start:end]
-            
-            if chunk.strip():
-                chunks.append(chunk.strip())
-            
-            # Move start position with overlap
-            start = end - overlap
-            if start >= len(text):
-                break
-        
-        return chunks
-    
-    def _split_text(self, text: str, max_length: int = 1000) -> List[str]:
-        """Legacy tekst splitting (behouden voor backward compatibility)"""
-        if len(text) <= max_length:
-            return [text]
-        
-        chunks = []
-        current_chunk = ""
-        
-        # Split by sentences first
-        sentences = re.split(r'[.!?]+', text)
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-                
-            if len(current_chunk) + len(sentence) + 1 <= max_length:
-                current_chunk += sentence + ". "
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence + ". "
-        
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-        
-        return chunks 
+            print(f"Error extracting text file: {e}")
+            return "" 

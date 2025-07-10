@@ -354,18 +354,37 @@ export default function Dashboard() {
                   </div>
 
                   {/* Question Input */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Uw vraag
-                    </label>
-                    <textarea
-                      value={question}
-                      onChange={(e) => setQuestion(e.target.value)}
-                      placeholder="Stel uw vraag hier..."
-                      className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none"
-                      rows="4"
-                      disabled={loading}
-                    />
+                  <div className="flex flex-col md:flex-row md:items-end md:space-x-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Uw vraag
+                      </label>
+                      <textarea
+                        value={question}
+                        onChange={(e) => setQuestion(e.target.value)}
+                        placeholder="Stel uw vraag hier..."
+                        className="w-full p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none"
+                        rows="4"
+                        disabled={loading}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuestion('');
+                        setAnswer('');
+                        setSources([]);
+                        setResponseWarning("");
+                        setProcessingTime(null);
+                        setDocumentFilter('');
+                        setSelectedDocument(null); // Reset document selectie
+                      }}
+                      className="mt-4 md:mt-0 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center"
+                      disabled={loading && 'disabled'}
+                      style={{ minWidth: 160 }}
+                    >
+                      Nieuwe vraag
+                    </button>
                   </div>
 
                   {/* Submit Button */}

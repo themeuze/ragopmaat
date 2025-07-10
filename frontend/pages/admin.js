@@ -1,191 +1,143 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../components/AuthContext'
 import { useRouter } from 'next/router'
+import axios from 'axios'
+import { 
+  Brain, 
+  Users, 
+  FileText, 
+  Upload, 
+  Trash2, 
+  LogOut,
+  Home,
+  Clock,
+  Crown,
+  Shield,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  Loader2,
+  BarChart3,
+  Settings
+} from 'lucide-react'
 import Link from 'next/link'
-import { CheckCircle, Trash2, Edit, Plus, LogOut, Brain, Home, Users, AlertCircle, Clock, Crown, Shield, Star } from 'lucide-react'
 
-export default function AdminDashboard() {
-  const { user, isAdmin, loading: authLoading, fetchUsers, createUser, updateUser, deleteUser, logout } = useAuth()
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [showForm, setShowForm] = useState(false)
-  const [editUser, setEditUser] = useState(null)
-  const [form, setForm] = useState({ 
-    username: '', 
-    email: '', 
-    password: '', 
-    role: 'user',
-    tier: 'basic',
-    is_active: true,
-    start_trial: false
-  })
-  const [success, setSuccess] = useState('')
+export default function Admin() {
+  const { user, logout, isAuthenticated, isAdmin, loading: authLoading } = useAuth()
   const router = useRouter()
+  
+  const [users, setUsers] = useState([])
+  const [documents, setDocuments] = useState([])
+  const [activeTab, setActiveTab] = useState('overview')
+  const [bulkUploading, setBulkUploading] = useState(false)
+  const [bulkUploadResults, setBulkUploadResults] = useState(null)
+  const [selectedFiles, setSelectedFiles] = useState([])
 
   useEffect(() => {
     if (authLoading) return
     
-    if (!isAdmin) {
+    if (!isAuthenticated) {
       router.push('/login')
       return
     }
-    loadUsers()
-  }, [isAdmin, authLoading])
+    
+    if (!isAdmin) {
+      router.push('/dashboard')
+      return
+    }
+    
+    fetchUsers()
+    fetchAllDocuments()
+  }, [isAuthenticated, authLoading, isAdmin])
 
-  const loadUsers = async () => {
-    setLoading(true)
-    setError('')
+  const fetchUsers = async () => {
     try {
-      const data = await fetchUsers()
-      setUsers(data)
-    } catch (err) {
-      setError('Kan gebruikers niet laden')
-    } finally {
-      setLoading(false)
+      const response = await axios.get('/api/auth/users')
+      setUsers(response.data)
+    } catch (error) {
+      console.error('Error fetching users:', error)
     }
   }
 
-  const handleFormChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
-  }
-
-  const handleCreate = async (e) => {
-    e.preventDefault()
-    setError('')
-    setSuccess('')
+  const fetchAllDocuments = async () => {
     try {
-      await createUser(form)
-      setSuccess('Gebruiker aangemaakt!')
-      setShowForm(false)
-      setForm({ 
-        username: '', 
-        email: '', 
-        password: '', 
-        role: 'user',
-        tier: 'basic',
-        is_active: true,
-        start_trial: false
-      })
-      loadUsers()
-    } catch (err) {
-      setError('Fout bij aanmaken gebruiker')
+      const response = await axios.get('/api/documents')
+      setDocuments(response.data)
+    } catch (error) {
+      console.error('Error fetching documents:', error)
     }
   }
 
-  const handleEdit = (user) => {
-    setEditUser(user)
-    setForm({ 
-      username: user.username, 
-      email: user.email, 
-      password: '', 
-      role: user.role,
-      tier: user.tier,
-      is_active: user.is_active,
-      start_trial: false
+  const handleBulkUpload = async (event) => {
+    event.preventDefault()
+    if (selectedFiles.length === 0) return
+
+    setBulkUploading(true)
+    setBulkUploadResults(null)
+
+    const formData = new FormData()
+    selectedFiles.forEach(file => {
+      formData.append('files', file)
     })
-    setShowForm(true)
-  }
 
-  const handleUpdate = async (e) => {
-    e.preventDefault()
-    setError('')
-    setSuccess('')
     try {
-      await updateUser(editUser.id, form)
-      setSuccess('Gebruiker bijgewerkt!')
-      setShowForm(false)
-      setEditUser(null)
-      setForm({ 
-        username: '', 
-        email: '', 
-        password: '', 
-        role: 'user',
-        tier: 'basic',
-        is_active: true,
-        start_trial: false
+      const response = await axios.post('/api/bulk-upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       })
-      loadUsers()
-    } catch (err) {
-      setError('Fout bij bijwerken gebruiker')
+      
+      setBulkUploadResults(response.data)
+      fetchAllDocuments() // Refresh documents list
+    } catch (error) {
+      console.error('Bulk upload error:', error)
+      setBulkUploadResults({
+        message: 'Bulk upload failed: ' + (error.response?.data?.detail || error.message),
+        summary: { total_files: 0, successful: 0, warnings: 0, errors: 1 },
+        results: []
+      })
+    } finally {
+      setBulkUploading(false)
+      setSelectedFiles([])
     }
   }
 
-  const handleDelete = async (id) => {
+  const handleFileSelect = (event) => {
+    const files = Array.from(event.target.files)
+    setSelectedFiles(files)
+  }
+
+  const handleDeleteUser = async (userId) => {
     if (!confirm('Weet je zeker dat je deze gebruiker wilt verwijderen?')) return
-    setError('')
-    setSuccess('')
+
     try {
-      await deleteUser(id)
-      setSuccess('Gebruiker verwijderd!')
-      loadUsers()
-    } catch (err) {
-      setError('Fout bij verwijderen gebruiker')
+      await axios.delete(`/api/auth/users/${userId}`)
+      fetchUsers()
+    } catch (error) {
+      console.error('Delete user error:', error)
+      alert('Delete failed: ' + (error.response?.data?.detail || error.message))
+    }
+  }
+
+  const handleDeleteDocument = async (documentId) => {
+    if (!confirm('Weet je zeker dat je dit document wilt verwijderen?')) return
+
+    try {
+      await axios.delete(`/api/documents/${documentId}`)
+      fetchAllDocuments()
+    } catch (error) {
+      console.error('Delete document error:', error)
+      alert('Delete failed: ' + (error.response?.data?.detail || error.message))
     }
   }
 
   const handleLogout = () => {
     logout()
-    router.push('/login')
+    router.push('/')
   }
 
-  const handleStartTrial = async (userId) => {
-    const days = prompt('Aantal dagen voor trial (standaard 14):', '14')
-    if (!days || isNaN(days)) return
-    
-    setError('')
-    setSuccess('')
-    try {
-      const response = await fetch(`/api/users/${userId}/trial`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({ days: parseInt(days) })
-      })
-      
-      if (!response.ok) {
-        throw new Error('Fout bij starten trial')
-      }
-      
-      setSuccess('Trial succesvol gestart!')
-      loadUsers()
-    } catch (err) {
-      setError('Fout bij starten trial')
-    }
-  }
-
-  const getTierColor = (tier) => {
-    switch (tier) {
-      case 'premium': return 'bg-green-100 text-green-800'
-      case 'white_label': return 'bg-purple-100 text-purple-800'
-      case 'basic': return 'bg-blue-100 text-blue-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getTierIcon = (tier) => {
-    switch (tier) {
-      case 'premium': return <Crown className="h-4 w-4" />
-      case 'white_label': return <Star className="h-4 w-4" />
-      case 'basic': return <Shield className="h-4 w-4" />
-      default: return <Shield className="h-4 w-4" />
-    }
-  }
-
-  const getTrialStatusColor = (user) => {
-    if (!user.is_trial_active) return 'bg-gray-100 text-gray-800'
-    if (user.days_left_in_trial > 7) return 'bg-green-100 text-green-800'
-    if (user.days_left_in_trial > 0) return 'bg-yellow-100 text-yellow-800'
-    return 'bg-red-100 text-red-800'
-  }
-
-  const getEffectiveTier = (user) => {
-    if (user.is_in_trial) {
-      return 'premium (trial)'
-    }
-    return user.tier
+  if (!isAuthenticated || !isAdmin) {
+    return <div>Loading...</div>
   }
 
   return (
@@ -195,8 +147,8 @@ export default function AdminDashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <Brain className="h-10 w-10 mr-3" />
-              <h1 className="text-2xl font-bold">RAG op Maat Admin</h1>
+              <Crown className="h-10 w-10 mr-3" />
+              <h1 className="text-2xl font-bold">Admin Dashboard</h1>
             </div>
             <div className="flex items-center space-x-6">
               <Link href="/dashboard" className="flex items-center text-white hover:text-green-200 transition-colors">
@@ -219,271 +171,358 @@ export default function AdminDashboard() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <Users className="h-8 w-8 text-green-600 mr-3" />
-            <h2 className="text-3xl font-bold text-gray-900">Gebruikersbeheer</h2>
-          </div>
-          <p className="text-gray-600">Beheer gebruikersaccounts, rollen en trial periodes in het systeem.</p>
+        {/* Tabs */}
+        <div className="flex space-x-8 mb-8">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition-all duration-200 ${
+              activeTab === 'overview' 
+                ? 'bg-green-100 text-green-700 shadow-md' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            <BarChart3 className="h-5 w-5" />
+            <span>Overzicht</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition-all duration-200 ${
+              activeTab === 'users' 
+                ? 'bg-green-100 text-green-700 shadow-md' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            <Users className="h-5 w-5" />
+            <span>Gebruikers</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition-all duration-200 ${
+              activeTab === 'documents' 
+                ? 'bg-green-100 text-green-700 shadow-md' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            <FileText className="h-5 w-5" />
+            <span>Documenten</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('bulk-upload')}
+            className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition-all duration-200 ${
+              activeTab === 'bulk-upload' 
+                ? 'bg-green-100 text-green-700 shadow-md' 
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+          >
+            <Upload className="h-5 w-5" />
+            <span>Bulk Upload</span>
+          </button>
         </div>
 
-        {/* Messages */}
-        {error && (
-          <div className="alert-error mb-6 flex items-center">
-            <AlertCircle className="h-5 w-5 mr-2" />
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="alert-success mb-6 flex items-center">
-            <CheckCircle className="h-5 w-5 mr-2" />
-            {success}
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="card">
+              <div className="flex items-center">
+                <Users className="h-8 w-8 text-blue-600 mr-3" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Gebruikers</h3>
+                  <p className="text-2xl font-bold text-blue-600">{users.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="card">
+              <div className="flex items-center">
+                <FileText className="h-8 w-8 text-green-600 mr-3" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Documenten</h3>
+                  <p className="text-2xl font-bold text-green-600">{documents.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="card">
+              <div className="flex items-center">
+                <Crown className="h-8 w-8 text-purple-600 mr-3" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Admins</h3>
+                  <p className="text-2xl font-bold text-purple-600">
+                    {users.filter(u => u.role === 'admin').length}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Users Table Card */}
-        <div className="card mb-8">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-semibold text-gray-900">Gebruikers</h3>
-            <button 
-              onClick={() => { 
-                setShowForm(true); 
-                setEditUser(null); 
-                setForm({ 
-                  username: '', 
-                  email: '', 
-                  password: '', 
-                  role: 'user',
-                  tier: 'basic',
-                  is_active: true,
-                  start_trial: false
-                }) 
-              }} 
-              className="btn-primary flex items-center"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Nieuwe gebruiker
-            </button>
-          </div>
-          
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
-              <span className="ml-3 text-gray-600">Gebruikers laden...</span>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gebruikersnaam</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Abonnement</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trial Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dagen Over</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acties</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map(u => (
-                    <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{u.id}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{u.username}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{u.email}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          u.role === 'admin' 
-                            ? 'bg-red-100 text-red-800' 
-                            : 'bg-green-100 text-green-800'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTierColor(u.tier)}`}>
-                            {getTierIcon(u.tier)}
-                            {getEffectiveTier(u)}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          u.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {u.is_active ? 'Actief' : 'Inactief'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTrialStatusColor(u)}`}>
-                          {u.is_trial_active ? (u.days_left_in_trial > 0 ? 'Actief' : 'Verlopen') : 'Geen Trial'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {u.is_trial_active ? u.days_left_in_trial : '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                        <button 
-                          onClick={() => handleEdit(u)} 
-                          className="text-blue-600 hover:text-blue-900 flex items-center"
-                        >
-                          <Edit className="h-4 w-4 mr-1" />
-                          Bewerk
-                        </button>
-                        <button 
-                          onClick={() => handleStartTrial(u.id)} 
-                          className="text-purple-600 hover:text-purple-900 flex items-center"
-                        >
-                          <Clock className="h-4 w-4 mr-1" />
-                          Trial
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(u.id)} 
-                          className="text-red-600 hover:text-red-900 flex items-center"
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Verwijder
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Form Modal */}
-        {showForm && (
+        {/* Users Tab */}
+        {activeTab === 'users' && (
           <div className="card">
-            <h3 className="text-xl font-semibold text-gray-900 mb-6">
-              {editUser ? 'Bewerk gebruiker' : 'Nieuwe gebruiker'}
-            </h3>
-            <form onSubmit={editUser ? handleUpdate : handleCreate} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="form-group">
-                  <label className="form-label">Gebruikersnaam</label>
-                  <input 
-                    type="text" 
-                    name="username" 
-                    value={form.username} 
-                    onChange={handleFormChange} 
-                    required 
-                    className="input-field"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Email</label>
-                  <input 
-                    type="email" 
-                    name="email" 
-                    value={form.email} 
-                    onChange={handleFormChange} 
-                    required 
-                    className="input-field"
-                  />
-                </div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">Gebruikers Beheer</h2>
+            
+            {users.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Gebruiker
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Rol
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Tier
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Acties
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {users.map((user) => (
+                      <tr key={user.id}>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{user.username}</div>
+                            <div className="text-sm text-gray-500">{user.email}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            user.role === 'admin' 
+                              ? 'bg-purple-100 text-purple-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            user.tier === 'premium' 
+                              ? 'bg-green-100 text-green-800'
+                              : user.tier === 'white_label'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {user.tier}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            user.is_active 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {user.is_active ? 'Actief' : 'Inactief'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <button
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="form-group">
-                  <label className="form-label">
-                    Wachtwoord {editUser && <span className="text-gray-400">(leeg laten = niet wijzigen)</span>}
-                  </label>
-                  <input 
-                    type="password" 
-                    name="password" 
-                    value={form.password} 
-                    onChange={handleFormChange} 
-                    className="input-field"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Rol</label>
-                  <select 
-                    name="role" 
-                    value={form.role} 
-                    onChange={handleFormChange} 
-                    className="input-field"
-                  >
-                    <option value="user">Gebruiker</option>
-                    <option value="admin">Administrator</option>
-                  </select>
-                </div>
+            ) : (
+              <div className="text-center py-12">
+                <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Nog geen gebruikers</h3>
+                <p className="text-gray-500">Gebruikers verschijnen hier zodra ze zich registreren</p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="form-group">
-                  <label className="form-label">Abonnement</label>
-                  <select 
-                    name="tier" 
-                    value={form.tier} 
-                    onChange={handleFormChange} 
-                    className="input-field"
-                  >
-                    <option value="basic">Basic</option>
-                    <option value="premium">Premium</option>
-                    <option value="white_label">White Label</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Status</label>
-                  <select 
-                    name="is_active" 
-                    value={form.is_active ? 'true' : 'false'}
-                    onChange={e => setForm({ ...form, is_active: e.target.value === 'true' })}
-                    className="input-field"
-                  >
-                    <option value="true">Actief</option>
-                    <option value="false">Inactief</option>
-                  </select>
-                </div>
+            )}
+          </div>
+        )}
+
+        {/* Documents Tab */}
+        {activeTab === 'documents' && (
+          <div className="card">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">Alle Documenten</h2>
+            
+            {documents.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Bestandsnaam
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Gebruiker
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Chunks
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Acties
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {documents.map((document) => (
+                      <tr key={document.id}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {document.original_filename}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {document.file_type}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {users.find(u => u.id === document.user_id)?.username || 'Onbekend'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                            document.is_processed 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {document.is_processed ? 'Verwerkt' : 'In behandeling'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {document.chunk_count}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <button
+                            onClick={() => handleDeleteDocument(document.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              {!editUser && (
-                <div className="form-group">
-                  <label className="form-label">Start Trial</label>
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="start_trial"
-                      checked={form.start_trial}
-                      onChange={(e) => setForm({ ...form, start_trial: e.target.checked })}
-                      className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Start 14-daagse trial bij aanmaken</span>
-                  </div>
+            ) : (
+              <div className="text-center py-12">
+                <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Nog geen documenten</h3>
+                <p className="text-gray-500">Documenten verschijnen hier zodra ze worden geüpload</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Bulk Upload Tab */}
+        {activeTab === 'bulk-upload' && (
+          <div className="card">
+            <h2 className="text-xl font-semibold text-gray-900 mb-6">Bulk Document Upload</h2>
+            
+            <form onSubmit={handleBulkUpload} className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Selecteer meerdere bestanden
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.txt,.md"
+                  onChange={handleFileSelect}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  disabled={bulkUploading}
+                />
+                <p className="mt-2 text-sm text-gray-500">
+                  Ondersteunde formaten: PDF, DOCX, TXT, MD. Maximaal 10 bestanden tegelijk.
+                </p>
+              </div>
+
+              {selectedFiles.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Geselecteerde bestanden:</h3>
+                  <ul className="space-y-1">
+                    {selectedFiles.map((file, index) => (
+                      <li key={index} className="text-sm text-gray-600">
+                        {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
-              <div className="flex space-x-4 pt-4">
-                <button 
-                  type="submit" 
-                  className="btn-primary"
-                >
-                  {editUser ? 'Opslaan' : 'Aanmaken'}
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => { 
-                    setShowForm(false); 
-                    setEditUser(null); 
-                    setForm({ 
-                      username: '', 
-                      email: '', 
-                      password: '', 
-                      role: 'user',
-                      tier: 'basic',
-                      is_active: true,
-                      start_trial: false
-                    }) 
-                  }} 
-                  className="btn-secondary"
-                >
-                  Annuleren
-                </button>
-              </div>
+
+              <button
+                type="submit"
+                disabled={bulkUploading || selectedFiles.length === 0}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {bulkUploading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                    Uploaden...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-5 w-5 mr-2" />
+                    Bulk Upload Starten
+                  </>
+                )}
+              </button>
             </form>
+
+            {/* Upload Results */}
+            {bulkUploadResults && (
+              <div className="mt-8">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload Resultaten</h3>
+                
+                {/* Summary */}
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-gray-900">{bulkUploadResults.summary.total_files}</div>
+                      <div className="text-sm text-gray-500">Totaal</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{bulkUploadResults.summary.successful}</div>
+                      <div className="text-sm text-gray-500">Succesvol</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-yellow-600">{bulkUploadResults.summary.warnings}</div>
+                      <div className="text-sm text-gray-500">Waarschuwingen</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-600">{bulkUploadResults.summary.errors}</div>
+                      <div className="text-sm text-gray-500">Fouten</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detailed Results */}
+                <div className="space-y-3">
+                  {bulkUploadResults.results.map((result, index) => (
+                    <div key={index} className="flex items-center p-3 border rounded-lg">
+                      {result.status === 'success' && <CheckCircle className="h-5 w-5 text-green-600 mr-3" />}
+                      {result.status === 'warning' && <AlertCircle className="h-5 w-5 text-yellow-600 mr-3" />}
+                      {result.status === 'error' && <XCircle className="h-5 w-5 text-red-600 mr-3" />}
+                      
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{result.filename}</div>
+                        <div className="text-sm text-gray-500">{result.message}</div>
+                        {result.chunks > 0 && (
+                          <div className="text-xs text-gray-400">{result.chunks} chunks gecreëerd</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -81,7 +81,7 @@ async def query_documents(
             document_filter = document.original_filename
         
         # Search for relevant documents
-        sources = vectorstore.search(query_request.question, n_results=10, document_filter=document_filter)
+        sources = vectorstore.search(query_request.question, n_results=10, document_filter=document_filter or "")
         
         if not sources:
             if query_request.document_id:
@@ -103,25 +103,51 @@ async def query_documents(
                     warning=None
                 )
         
-        # Generate answer with sources with timeout
         warning = None
-        answer = None
-        result = None
-        try:
-            result = await asyncio.wait_for(
-                llm.generate_with_sources(query_request.question, sources),
-                timeout=180.0
-            )
-            answer = result["answer"]
-            print(f"[DEBUG] Ruwe LLM-antwoord: {answer}")
-        except asyncio.TimeoutError:
-            warning = "Het genereren van het antwoord duurde langer dan verwacht. Hier is een samenvatting van de gevonden bronnen."
-            answer = ""  # Geen antwoord, alleen warning tonen
-            print(f"[DEBUG] Timeout, geen antwoord.")
-        except Exception as llm_error:
-            warning = f"Er was een probleem met de AI-generatie: {str(llm_error)}. Hier is een samenvatting van de gevonden bronnen."
-            answer = ""  # Geen antwoord, alleen warning tonen
-            print(f"[DEBUG] Exception, geen antwoord.")
+        result = {}
+        # Detecteer of de vraag om een samenvatting per document vraagt
+        if (
+            'samenvatting per document' in query_request.question.lower() or
+            'samenvatting van elk document' in query_request.question.lower() or
+            'per document een samenvatting' in query_request.question.lower()
+        ):
+            # Bouw context per document
+            doc_contexts = []
+            for i, source in enumerate(sources, 1):
+                doc_name = source['metadata'].get('original_filename') or f"Document {i}"
+                doc_contexts.append(f"Document {i} ({doc_name}):\n{source['content']}\n")
+            context = "\n\n".join(doc_contexts)
+            # Pas de prompt aan
+            question = query_request.question + "\n\nGeef per document een korte, duidelijke samenvatting."
+            answer = await llm.generate(question, context)
+            # Vul result voor consistentie met de rest van de code
+            formatted_sources = []
+            for i, source in enumerate(sources, 1):
+                formatted_sources.append({
+                    "id": i,
+                    "content": source['content'],
+                    "metadata": source.get('metadata', {}),
+                    "relevance": 1.0  # Default relevance voor samenvattingen
+                })
+            result = {"answer": answer, "sources": formatted_sources}
+        else:
+            # Standaard gedrag
+            context = "\n\n".join([s["content"] for s in sources])
+            try:
+                result = await asyncio.wait_for(
+                    llm.generate_with_sources(query_request.question, sources),
+                    timeout=180.0
+                )
+                answer = result["answer"]
+                print(f"[DEBUG] Ruwe LLM-antwoord: {answer}")
+            except asyncio.TimeoutError:
+                warning = "Het genereren van het antwoord duurde langer dan verwacht. Hier is een samenvatting van de gevonden bronnen."
+                answer = ""  # Geen antwoord, alleen warning tonen
+                print(f"[DEBUG] Timeout, geen antwoord.")
+            except Exception as llm_error:
+                warning = f"Er was een probleem met de AI-generatie: {str(llm_error)}. Hier is een samenvatting van de gevonden bronnen."
+                answer = ""  # Geen antwoord, alleen warning tonen
+                print(f"[DEBUG] Exception, geen antwoord.")
         
         processing_time = time.time() - start_time
         if processing_time > 60 and not warning:
