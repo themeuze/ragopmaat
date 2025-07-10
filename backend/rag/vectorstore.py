@@ -11,7 +11,8 @@ class EmbeddingVectorStore:
         self.metadatas = []
         self.ids = []
         self.embeddings = []
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Gebruik een betere embedding model voor Nederlandse tekst
+        self.model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
         self._load_data()
     
     def _load_data(self):
@@ -66,7 +67,7 @@ class EmbeddingVectorStore:
             print(f"Error adding documents: {e}")
             return False
     
-    def search(self, query: str, n_results: int = 5, document_filter: str = None) -> List[Dict[str, Any]]:
+    def search(self, query: str, n_results: int = 10, document_filter: str = None) -> List[Dict[str, Any]]:
         """Zoek in de vectorstore met optionele document filtering"""
         try:
             print(f"Searching for: '{query}' in {len(self.documents)} documents")
@@ -88,11 +89,12 @@ class EmbeddingVectorStore:
                 for idx, score in indexed_scores:
                     metadata = self.metadatas[idx] if idx < len(self.metadatas) else {}
                     file_path = metadata.get('file_path', '')
-                    # Extract filename from file_path
-                    filename = os.path.basename(file_path) if file_path else ''
-                    if document_filter.lower() in filename.lower():
+                    filename = metadata.get('filename', '')
+                    # Check both file_path and filename
+                    if (document_filter.lower() in file_path.lower() or 
+                        document_filter.lower() in filename.lower()):
                         filtered_indices.append((idx, score))
-                        print(f"Found matching document: {filename}")
+                        print(f"Found matching document: {filename or os.path.basename(file_path)}")
                 indexed_scores = filtered_indices
                 print(f"Filtered to {len(filtered_indices)} documents")
             
@@ -102,13 +104,15 @@ class EmbeddingVectorStore:
             
             results = []
             for idx in top_indices:
-                results.append({
-                    'content': self.documents[idx],
-                    'metadata': self.metadatas[idx] if idx < len(self.metadatas) else {},
-                    'relevance': float(scores[idx])
-                })
+                # Alleen resultaten met een redelijke similarity score
+                if scores[idx] > 0.1:  # Minimum similarity threshold
+                    results.append({
+                        'content': self.documents[idx],
+                        'metadata': self.metadatas[idx] if idx < len(self.metadatas) else {},
+                        'relevance': float(scores[idx])
+                    })
             
-            print(f"Found {len(results)} results")
+            print(f"Found {len(results)} results with similarity > 0.1")
             return results
         except Exception as e:
             print(f"Error searching: {e}")

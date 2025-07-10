@@ -68,21 +68,21 @@ class OllamaLLM:
             # Bouw de prompt op
             if context:
                 full_prompt = (
-                    "Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk, uitsluitend op basis van de context uit de geüploade documenten.\n"
-                    "Gebruik alleen informatie die daadwerkelijk in de context staat.\n"
-                    "- Geef een helder, zelfstandig antwoord in normaal Nederlands.\n"
-                    "- Schrijf als een mens, niet als een robot.\n"
-                    "- Gebruik geen opsommingen, geen markdown, geen kopjes, geen verwijzingen naar 'bron 1' of 'bron 2'.\n"
-                    "- Vat relevante informatie samen tot een lopend verhaal, zoals je dat aan een huurder of collega zou uitleggen.\n"
-                    "- Als het antwoord niet in de context staat, zeg dan eerlijk: 'Op basis van de beschikbare documenten kan ik deze vraag niet beantwoorden.'\n\n"
+                    "Je bent een ervaren assistent die vragen beantwoordt op basis van gegeven context. "
+                    "Beantwoord de vraag zo volledig en duidelijk mogelijk, gebruikmakend van de beschikbare informatie.\n\n"
+                    "Instructies:\n"
+                    "- Gebruik de context om een helder en informatief antwoord te geven\n"
+                    "- Als de context relevante informatie bevat, gebruik deze dan\n"
+                    "- Schrijf in natuurlijk, vloeiend Nederlands\n"
+                    "- Geef concrete en praktische antwoorden\n"
+                    "- Als je niet zeker bent, zeg dat dan eerlijk\n"
+                    "- Als de context niet genoeg informatie bevat, geef dan aan wat er ontbreekt\n\n"
                     f"Context:\n{context}\n\nVraag: {prompt}\n\nAntwoord:"
                 )
             else:
                 full_prompt = (
-                    "Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk.\n"
-                    "Geef een helder, zelfstandig antwoord in normaal Nederlands.\n"
-                    "Schrijf als een mens, niet als een robot.\n"
-                    "Gebruik geen opsommingen, geen markdown, geen kopjes.\n"
+                    "Je bent een ervaren assistent. Beantwoord de vraag zo volledig en duidelijk mogelijk.\n"
+                    "Schrijf in natuurlijk, vloeiend Nederlands.\n"
                     "Als je het antwoord niet weet, zeg dat dan eerlijk.\n\n"
                     f"Vraag: {prompt}\n\nAntwoord:"
                 )

@@ -81,7 +81,7 @@ async def query_documents(
             document_filter = document.original_filename
         
         # Search for relevant documents
-        sources = vectorstore.search(query_request.question, n_results=5, document_filter=document_filter)
+        sources = vectorstore.search(query_request.question, n_results=10, document_filter=document_filter)
         
         if not sources:
             if query_request.document_id:

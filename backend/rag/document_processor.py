@@ -12,6 +12,8 @@ import pytesseract
 class DocumentProcessor:
     def __init__(self):
         self.supported_extensions = ['.pdf', '.docx', '.md', '.txt']
+        self.chunk_size = 2000  # Verhoogd van 1000 naar 2000
+        self.chunk_overlap = 200  # Overlap tussen chunks voor betere context
     
     def process_document(self, file_path: str, file_type: str) -> List[Dict[str, Any]]:
         """Verwerk een document en splits het in chunks"""
@@ -53,7 +55,7 @@ class DocumentProcessor:
                     else:
                         print(f"[PDF DEBUG] Pagina {page_num+1}: {repr(text)[:200]}")
                     if text and text.strip():
-                        page_chunks = self._split_text(text, max_length=1000)
+                        page_chunks = self._split_text_improved(text, max_length=self.chunk_size, overlap=self.chunk_overlap)
                         for chunk_num, chunk in enumerate(page_chunks):
                             chunks.append({
                                 'id': f"{uuid.uuid4()}",
@@ -62,7 +64,8 @@ class DocumentProcessor:
                                     'page': page_num + 1,
                                     'chunk': chunk_num + 1,
                                     'file_type': 'pdf',
-                                    'file_path': file_path
+                                    'file_path': file_path,
+                                    'filename': os.path.basename(file_path)
                                 }
                             })
         except Exception as e:
@@ -84,8 +87,8 @@ class DocumentProcessor:
             
             full_text = '\n\n'.join(text_parts)
             
-            # Split into chunks
-            text_chunks = self._split_text(full_text, max_length=1000)
+            # Split into chunks with overlap
+            text_chunks = self._split_text_improved(full_text, max_length=self.chunk_size, overlap=self.chunk_overlap)
             
             for chunk_num, chunk in enumerate(text_chunks):
                 chunks.append({
@@ -94,7 +97,8 @@ class DocumentProcessor:
                     'metadata': {
                         'chunk': chunk_num + 1,
                         'file_type': 'docx',
-                        'file_path': file_path
+                        'file_path': file_path,
+                        'filename': os.path.basename(file_path)
                     }
                 })
         except Exception as e:
@@ -115,8 +119,8 @@ class DocumentProcessor:
                     # Remove HTML tags
                     content = re.sub(r'<[^>]+>', '', content)
                 
-                # Split into chunks
-                text_chunks = self._split_text(content, max_length=1000)
+                # Split into chunks with overlap
+                text_chunks = self._split_text_improved(content, max_length=self.chunk_size, overlap=self.chunk_overlap)
                 
                 for chunk_num, chunk in enumerate(text_chunks):
                     chunks.append({
@@ -125,7 +129,8 @@ class DocumentProcessor:
                         'metadata': {
                             'chunk': chunk_num + 1,
                             'file_type': 'text',
-                            'file_path': file_path
+                            'file_path': file_path,
+                            'filename': os.path.basename(file_path)
                         }
                     })
         except Exception as e:
@@ -133,8 +138,62 @@ class DocumentProcessor:
         
         return chunks
     
+    def _split_text_improved(self, text: str, max_length: int = 2000, overlap: int = 200) -> List[str]:
+        """Verbeterde tekst splitting met overlap en semantische grenzen"""
+        if len(text) <= max_length:
+            return [text]
+        
+        # Clean up text
+        text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+        text = text.strip()
+        
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            # Determine end position
+            end = start + max_length
+            
+            if end >= len(text):
+                # Last chunk
+                chunk = text[start:]
+            else:
+                # Try to find a good break point
+                chunk = text[start:end]
+                
+                # Look for paragraph breaks first
+                last_paragraph = chunk.rfind('\n\n')
+                if last_paragraph > max_length * 0.7:  # If we find a paragraph break in the last 30%
+                    chunk = text[start:start + last_paragraph]
+                    end = start + last_paragraph
+                else:
+                    # Look for sentence breaks
+                    last_sentence = chunk.rfind('. ')
+                    if last_sentence > max_length * 0.6:  # If we find a sentence break in the last 40%
+                        chunk = text[start:start + last_sentence + 1]
+                        end = start + last_sentence + 1
+                    else:
+                        # Look for word breaks
+                        last_space = chunk.rfind(' ')
+                        if last_space > max_length * 0.5:  # If we find a space in the last 50%
+                            chunk = text[start:start + last_space]
+                            end = start + last_space
+                        else:
+                            # Force break at max_length
+                            chunk = text[start:end]
+            
+            if chunk.strip():
+                chunks.append(chunk.strip())
+            
+            # Move start position with overlap
+            start = end - overlap
+            if start >= len(text):
+                break
+        
+        return chunks
+    
     def _split_text(self, text: str, max_length: int = 1000) -> List[str]:
-        """Split tekst in chunks van maximaal max_length karakters"""
+        """Legacy tekst splitting (behouden voor backward compatibility)"""
         if len(text) <= max_length:
             return [text]
         
