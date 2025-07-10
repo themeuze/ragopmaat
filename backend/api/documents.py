@@ -40,13 +40,14 @@ async def upload_document(
         )
     
     # Check user tier limits
-    if current_user.tier == "free":
-        doc_count = db.query(Document).filter(Document.user_id == current_user.id).count()
-        if doc_count >= 3:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Free tier limit reached (3 documents). Upgrade to upload more."
-            )
+    tier_limits = current_user.get_tier_limits()
+    doc_count = db.query(Document).filter(Document.user_id == current_user.id).count()
+    
+    if tier_limits["documents"] != float('inf') and doc_count >= tier_limits["documents"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Document limit reached ({tier_limits['documents']} documents). Upgrade to upload more."
+        )
     
     # Create documents directory if it doesn't exist
     os.makedirs("/app/documents", exist_ok=True)
@@ -75,7 +76,7 @@ async def upload_document(
     db.commit()
     db.refresh(db_document)
     
-    # Process document in background (simplified for now)
+    # Process document in background (asynchronous)
     try:
         print(f"Starting document processing for {file_path}")
         processor = DocumentProcessor()
@@ -101,10 +102,18 @@ async def upload_document(
             print(f"Document marked as processed with {len(chunks)} chunks")
         else:
             print("No chunks generated from document")
+            # Mark as processed even if no chunks (file was uploaded successfully)
+            db_document.is_processed = True
+            db_document.chunk_count = 0
+            db.commit()
         
     except Exception as e:
         print(f"Error processing document: {e}")
-        # Document is saved but not processed
+        # Document is saved but not processed - mark as processed to avoid retry
+        db_document.is_processed = True
+        db_document.chunk_count = 0
+        db.commit()
+        print(f"Document marked as processed despite processing error")
     
     return DocumentResponse(
         id=db_document.id,

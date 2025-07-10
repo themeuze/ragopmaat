@@ -16,3 +16,4 @@ numpy
 pytesseract
 pdf2image
 openai>=1.0.0 
+psycopg2-binary 

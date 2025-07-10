@@ -24,7 +24,7 @@ def create_test_user():
     try:
         # Check of gebruiker al bestaat
         existing_user = db.query(User).filter(
-            (User.email == "dirksmaurits@gmail.com") | (User.username == "dirksmaurits")
+            (User.email == "mdirks@gmail.com") | (User.username == "mdirks")
         ).first()
         
         if existing_user:
@@ -39,8 +39,8 @@ def create_test_user():
         
         # Maak nieuwe gebruiker
         new_user = User(
-            username="dirksmaurits",
-            email="dirksmaurits@gmail.com",
+            username="mdirks",
+            email="mdirks@gmail.com",
             hashed_password=hashed_password,
             tier="premium"  # Premium tier voor test gebruiker
         )
@@ -56,7 +56,7 @@ def create_test_user():
         print(f"   Tier: {new_user.tier}")
         print(f"   ID: {new_user.id}")
         print("\n🔑 Login gegevens:")
-        print("   Email: dirksmaurits@gmail.com")
+        print("   Email: mdirks@gmail.com")
         print("   Wachtwoord: M@zzel0211")
         
     except Exception as e:

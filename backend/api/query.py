@@ -9,6 +9,7 @@ from models import User, Query, Document
 from dependencies import get_current_user
 from rag.vectorstore import VectorStore
 from rag.llm import OllamaLLM
+from datetime import datetime
 
 router = APIRouter()
 
@@ -41,12 +42,20 @@ async def query_documents(
     start_time = time.time()
     
     # Check user tier limits
-    if current_user.tier == "free":
-        query_count = db.query(Query).filter(Query.user_id == current_user.id).count()
-        if query_count >= 5:
+    tier_limits = current_user.get_tier_limits()
+    
+    if tier_limits["queries_per_day"] != float('inf'):
+        # Count queries from today
+        today = datetime.utcnow().date()
+        query_count = db.query(Query).filter(
+            Query.user_id == current_user.id,
+            Query.created_at >= today
+        ).count()
+        
+        if query_count >= tier_limits["queries_per_day"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Free tier limit reached (5 queries per day). Upgrade for more queries."
+                detail=f"Daily query limit reached ({tier_limits['queries_per_day']} queries per day). Upgrade for more queries."
             )
     
     try:
@@ -179,7 +188,7 @@ def get_query_history(
             "question": query.question,
             "answer": query.answer,
             "sources": json.loads(query.sources) if query.sources else [],
-            "timestamp": query.created_at.isoformat()
+            "timestamp": query.created_at.isoformat() if query.created_at else None
         }
         for query in queries
     ]
@@ -224,25 +233,80 @@ def get_subscription_info():
     return {
         "tiers": [
             {
-                "name": "Free",
-                "price": 0,
-                "uploads": 3,
-                "queries_per_day": 5,
-                "features": ["Basis RAG functionaliteit", "PDF, DOCX, MD support"]
-            },
-            {
                 "name": "Basic",
-                "price": 5,
-                "uploads": 100,
-                "queries_per_day": 30,
-                "features": ["Meer documenten", "Meer vragen", "Prioriteit support"]
+                "price": 11.95,
+                "period": "per maand",
+                "description": "Perfect om te beginnen",
+                "uploads": 50,
+                "queries_per_day": 100,
+                "features": [
+                    "50 documenten uploaden",
+                    "100 vragen per dag", 
+                    "Basis AI modellen",
+                    "E-mail support",
+                    "14 dagen gratis trial"
+                ],
+                "trial_days": 14,
+                "trial_features": [
+                    "Premium functionaliteit tijdens trial",
+                    "Onbeperkte documenten",
+                    "Onbeperkte vragen",
+                    "Premium AI modellen"
+                ]
             },
             {
                 "name": "Premium",
-                "price": 20,
-                "uploads": "Unlimited",
-                "queries_per_day": "Unlimited",
-                "features": ["Onbeperkt gebruik", "API toegang", "White-label optie"]
+                "price": 23.95,
+                "period": "per maand", 
+                "description": "Voor professionals",
+                "uploads": "Onbeperkt",
+                "queries_per_day": "Onbeperkt",
+                "features": [
+                    "Onbeperkte documenten",
+                    "Onbeperkte vragen",
+                    "Premium AI modellen",
+                    "Prioriteit support",
+                    "API toegang",
+                    "Geavanceerde analytics",
+                    "14 dagen gratis trial"
+                ],
+                "trial_days": 14,
+                "trial_features": [
+                    "Premium functionaliteit tijdens trial",
+                    "Onbeperkte documenten", 
+                    "Onbeperkte vragen",
+                    "Premium AI modellen"
+                ]
+            },
+            {
+                "name": "White Label",
+                "price": "Op aanvraag",
+                "period": "maatwerk",
+                "description": "Maatwerk oplossingen",
+                "uploads": "Onbeperkt",
+                "queries_per_day": "Onbeperkt", 
+                "features": [
+                    "Volledig maatwerk",
+                    "Eigen branding",
+                    "Dedicated support",
+                    "Custom integraties",
+                    "SLA garantie",
+                    "On-site implementatie"
+                ],
+                "trial_days": 0,
+                "trial_features": [],
+                "contact_required": True
             }
-        ]
+        ],
+        "trial_info": {
+            "duration": 14,
+            "description": "Beide abonnementen zijn de eerste 14 dagen volledig gratis met premium functionaliteit",
+            "features": [
+                "Premium functionaliteit tijdens trial",
+                "Onbeperkte documenten uploaden",
+                "Onbeperkte vragen stellen",
+                "Premium AI modellen",
+                "Geen verplichting"
+            ]
+        }
     } 

@@ -21,7 +21,7 @@ import {
 import Link from 'next/link'
 
 export default function Dashboard() {
-  const { user, logout, isAuthenticated } = useAuth()
+  const { user, logout, isAuthenticated, isAdmin, loading: authLoading, isInTrial, getEffectiveTier, getTierLimits } = useAuth()
   const router = useRouter()
   
   const [documents, setDocuments] = useState([])
@@ -42,6 +42,9 @@ export default function Dashboard() {
   const [processingTime, setProcessingTime] = useState(null)
 
   useEffect(() => {
+    // Wacht tot de authenticatie is geladen
+    if (authLoading) return
+    
     if (!isAuthenticated) {
       router.push('/login')
       return
@@ -49,7 +52,7 @@ export default function Dashboard() {
     
     fetchDocuments()
     fetchQueries()
-  }, [isAuthenticated])
+  }, [isAuthenticated, authLoading])
 
   // Progress simulation for better UX
   useEffect(() => {
@@ -250,9 +253,19 @@ export default function Dashboard() {
                 <Home className="h-5 w-5 mr-2" />
                 Home
               </Link>
-              <span className="text-sm text-green-100">
-                Welkom, {user?.username} ({user?.tier})
-              </span>
+              <div className="flex items-center space-x-4">
+                {/* Trial Banner */}
+                {isInTrial && (
+                  <div className="bg-yellow-500 text-yellow-900 px-3 py-1 rounded-full text-sm font-semibold flex items-center">
+                    <Clock className="h-4 w-4 mr-1" />
+                    Trial: {user?.days_left_in_trial} dagen
+                  </div>
+                )}
+                {/* Tier Info */}
+                <span className="text-sm text-green-100">
+                  Welkom, {user?.username} ({getEffectiveTier()})
+                </span>
+              </div>
               <button
                 onClick={handleLogout}
                 className="flex items-center text-white hover:text-green-200 transition-colors"
@@ -301,6 +314,15 @@ export default function Dashboard() {
             <Clock className="h-5 w-5" />
             <span>Geschiedenis</span>
           </button>
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="flex items-center space-x-2 px-6 py-3 rounded-lg transition-all duration-200 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+            >
+              <Brain className="h-5 w-5" />
+              <span>Admin</span>
+            </Link>
+          )}
         </div>
 
         {/* Chat Tab */}
@@ -554,7 +576,7 @@ export default function Dashboard() {
                           {document.file_type}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(document.upload_date).toLocaleDateString('nl-NL')}
+                          {new Date(document.uploaded_at).toLocaleDateString('nl-NL')}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <button

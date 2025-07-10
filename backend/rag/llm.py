@@ -8,9 +8,9 @@ import time
 import openai
 
 class OllamaLLM:
-    def __init__(self, model_name: str = "mistral", base_url: str = "http://localhost:11434"):
+    def __init__(self, model_name: str = "mistral", base_url: str = None):
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
     
     async def generate_streaming(self, prompt: str, context: str = "") -> AsyncGenerator[str, None]:
         """Genereer een antwoord met streaming voor betere UX"""
@@ -185,9 +185,9 @@ class OllamaLLM:
 
 class FastMockLLM:
     """Snelle mock LLM voor ontwikkeling en testing"""
-    def __init__(self, model_name: str = "mistral", base_url: str = "http://localhost:11434"):
+    def __init__(self, model_name: str = "mistral", base_url: str = None):
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
     
     async def generate(self, prompt: str, context: str = "") -> str:
         """Genereer een snel mock antwoord"""
@@ -232,9 +232,9 @@ class FastMockLLM:
         pass
 
 class MockLLM:
-    def __init__(self, model_name: str = "mistral", base_url: str = "http://localhost:11434"):
+    def __init__(self, model_name: str = "mistral", base_url: str = None):
         self.model_name = model_name
-        self.base_url = base_url
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
     
     async def generate(self, prompt: str, context: str = "") -> str:
         """Genereer een antwoord met context (mock)"""
@@ -410,8 +410,163 @@ class OpenAILLM:
     async def close(self):
         pass
 
-# Gebruik nu tijdelijk OpenAI LLM in plaats van Ollama
+class HuggingFaceLLM:
+    def __init__(self, model_name: str = "bigscience/bloomz-560m", api_key: str = None):
+        self.model_name = model_name
+        self.api_key = api_key or os.getenv("HUGGINGFACE_API_KEY")
+        self.base_url = "https://api-inference.huggingface.co/models"
+        if not self.api_key:
+            raise ValueError("Hugging Face API key is required. Set HUGGINGFACE_API_KEY environment variable.")
+    
+    async def generate_streaming(self, prompt: str, context: str = "") -> AsyncGenerator[str, None]:
+        """Genereer een antwoord met streaming voor betere UX"""
+        print(f"[LLM DEBUG] START generate_streaming() - HuggingFace")
+        try:
+            # Bouw de prompt op
+            if context:
+                full_prompt = f"""<s>[INST] Gebruik de volgende context om de vraag te beantwoorden:
+
+Context:
+{context}
+
+Vraag: {prompt}
+
+Geef een helder, zelfstandig antwoord in normaal Nederlands. Schrijf als een mens, niet als een robot. Gebruik geen opsommingen, geen markdown, geen kopjes. [/INST]"""
+            else:
+                full_prompt = f"""<s>[INST] Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk.
+
+Geef een helder, zelfstandig antwoord in normaal Nederlands. Schrijf als een mens, niet als een robot. Gebruik geen opsommingen, geen markdown, geen kopjes.
+
+Vraag: {prompt} [/INST]"""
+            
+            print(f"[LLM DEBUG] HuggingFace streaming request")
+            
+            # Voor HuggingFace kunnen we geen echte streaming doen, dus we doen een normale request
+            # en simuleren streaming door het antwoord in chunks te sturen
+            answer = await self.generate(prompt, context)
+            
+            # Simuleer streaming door het antwoord in chunks te sturen
+            chunk_size = 50
+            for i in range(0, len(answer), chunk_size):
+                chunk = answer[i:i + chunk_size]
+                yield chunk
+                await asyncio.sleep(0.1)  # Kleine pauze voor streaming effect
+                
+        except Exception as e:
+            print(f"[LLM DEBUG] Exception in generate_streaming: {e}")
+            traceback.print_exc()
+            yield f"Error: Kon geen antwoord genereren: {str(e)}"
+
+    async def generate(self, prompt: str, context: str = "") -> str:
+        print(f"[LLM DEBUG] START generate() - HuggingFace")
+        try:
+            # Bouw de prompt op
+            if context:
+                full_prompt = f"""<s>[INST] Gebruik de volgende context om de vraag te beantwoorden:
+
+Context:
+{context}
+
+Vraag: {prompt}
+
+Geef een helder, zelfstandig antwoord in normaal Nederlands. Schrijf als een mens, niet als een robot. Gebruik geen opsommingen, geen markdown, geen kopjes. [/INST]"""
+            else:
+                full_prompt = f"""<s>[INST] Je bent een ervaren woon- en verhuurconsulent. Beantwoord de onderstaande vraag zo volledig, duidelijk en professioneel mogelijk.
+
+Geef een helder, zelfstandig antwoord in normaal Nederlands. Schrijf als een mens, niet als een robot. Gebruik geen opsommingen, geen markdown, geen kopjes.
+
+Vraag: {prompt} [/INST]"""
+            
+            print(f"[LLM DEBUG] HuggingFace request to {self.base_url}/{self.model_name}")
+            
+            # Verhoog timeout naar 300 seconden (5 minuten) voor complexe vragen
+            timeout_config = httpx.Timeout(300.0, connect=30.0)
+            async with httpx.AsyncClient(timeout=timeout_config) as client:
+                response = await client.post(
+                    f"{self.base_url}/{self.model_name}",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "inputs": full_prompt,
+                        "parameters": {
+                            "max_new_tokens": 1000,
+                            "temperature": 0.2,
+                            "do_sample": True,
+                            "return_full_text": False
+                        }
+                    }
+                )
+                
+                print(f"[LLM DEBUG] Status code: {response.status_code}")
+                print(f"[LLM DEBUG] Response text: {response.text[:500]}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    if isinstance(result, list) and len(result) > 0:
+                        generated_text = result[0].get("generated_text", "")
+                        # Remove the input prompt from the response
+                        if full_prompt in generated_text:
+                            generated_text = generated_text.replace(full_prompt, "").strip()
+                        print(f"[LLM DEBUG] END generate() OK - HuggingFace")
+                        return generated_text
+                    else:
+                        print(f"[LLM DEBUG] Unexpected response format: {result}")
+                        return "Geen antwoord ontvangen van de LLM."
+                else:
+                    print(f"HuggingFace API error: {response.status_code} - {response.text}")
+                    print(f"[LLM DEBUG] END generate() ERROR - HuggingFace")
+                    return f"Error: Kon geen verbinding maken met HuggingFace (status {response.status_code})"
+                    
+        except httpx.TimeoutException as e:
+            print(f"[LLM DEBUG] Timeout Exception: {e}")
+            print(f"[LLM DEBUG] END generate() TIMEOUT - HuggingFace")
+            return "Error: HuggingFace duurde te lang om te antwoorden (meer dan 5 minuten). Probeer een kortere vraag of probeer het later opnieuw."
+        except httpx.ConnectError as e:
+            print(f"[LLM DEBUG] Connection Error: {e}")
+            print(f"[LLM DEBUG] END generate() CONNECTION_ERROR - HuggingFace")
+            return "Error: Kon geen verbinding maken met HuggingFace. Controleer je internetverbinding."
+        except Exception as e:
+            print(f"[LLM DEBUG] Exception: {e}")
+            traceback.print_exc()
+            print(f"[LLM DEBUG] END generate() EXCEPTION - HuggingFace")
+            return f"Error: Kon geen verbinding maken met HuggingFace: {str(e)}"
+
+    async def generate_with_sources(self, question, sources):
+        print(f"[LLM DEBUG] START generate_with_sources() - HuggingFace")
+        try:
+            context = "\n\n".join([s["content"] for s in sources])
+            answer = await self.generate(question, context)
+            formatted_sources = []
+            for i, source in enumerate(sources, 1):
+                formatted_sources.append({
+                    "id": i,
+                    "content": source['content'][:200] + "..." if len(source['content']) > 200 else source['content'],
+                    "metadata": source.get('metadata', {}),
+                    "relevance": 1 - source.get('distance', 0)
+                })
+            print(f"[LLM DEBUG] END generate_with_sources() OK - HuggingFace")
+            return {
+                "answer": answer,
+                "sources": formatted_sources,
+                "source_count": len(sources)
+            }
+        except Exception as e:
+            print(f"[LLM DEBUG] Exception in generate_with_sources: {e}")
+            traceback.print_exc()
+            print(f"[LLM DEBUG] END generate_with_sources() EXCEPTION - HuggingFace")
+            return {
+                "answer": f"Error: Kon geen antwoord genereren: {str(e)}",
+                "sources": [],
+                "source_count": 0
+            }
+
+    async def close(self):
+        pass
+
+# Gebruik OpenAI LLM in plaats van Ollama of HuggingFace
 OllamaLLM = OpenAILLM
-# OllamaLLM = OllamaLLM  # Terug naar originele Ollama
+# OllamaLLM = OpenAILLM  # OpenAI uitzetten
 # OllamaLLM = FastMockLLM  # Mock uitzetten
 # OllamaLLM = MockLLM 
