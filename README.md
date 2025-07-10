@@ -24,8 +24,8 @@ Een geavanceerd RAG (Retrieval-Augmented Generation) platform voor document Q&A 
 - **Trial Extensie**: Mogelijkheid om trials te verlengen
 
 ### Abonnement Systeem
-- **Basic (Gratis)**: 50 documenten, 100 vragen per dag
-- **Premium (€20/maand)**: Onbeperkte documenten en vragen
+- **Basic (€11.95/maand)**: 50 documenten, 100 vragen per dag
+- **Premium (€23.95/maand)**: Onbeperkte documenten en vragen
 - **White Label (Op aanvraag)**: Volledig maatwerk voor bedrijven
 - **14-Dagen Trial**: Alle nieuwe gebruikers krijgen premium functionaliteit gratis
 
@@ -49,7 +49,7 @@ Een geavanceerd RAG (Retrieval-Augmented Generation) platform voor document Q&A 
 - **Prijs**: Maatwerk
 - **Documenten**: Onbeperkt
 - **Vragen**: Onbeperkt
-- **Features**: Volledig maatwerk, Eigen branding, Dedicated support, Custom integraties, SLA garantie
+- **Features**: Volledig maatwerk, Eigen branding, Dedicated support, Custom integraties, SLA garantie, On-site implementatie
 - **Contact**: info@ragopmaat.nl
 
 ## 🎯 Trial Systeem
@@ -60,6 +60,7 @@ Alle nieuwe gebruikers krijgen automatisch 14 dagen premium functionaliteit:
 - **Premium AI modellen**
 - **Geen verplichting** - automatisch stoppen na trial
 - **Eenvoudig upgraden** of downgraden
+- **Geen creditcard vereist**
 
 ## 🛠️ Technische Stack
 
@@ -70,54 +71,62 @@ Alle nieuwe gebruikers krijgen automatisch 14 dagen premium functionaliteit:
 - **JWT**: Token-gebaseerde authenticatie
 - **OpenAI API**: AI Q&A functionaliteit
 - **Sentence Transformers**: Document embedding
+- **Pydantic**: Data validatie en serialisatie
 
 ### Frontend
-- **Next.js**: React framework
+- **Next.js 14**: React framework
 - **Tailwind CSS**: Styling framework
+- **Lucide React**: Icon library
 - **JWT Decode**: Token verwerking
 - **Axios**: HTTP client
 
 ### Infrastructure
 - **Docker**: Containerisatie
 - **Docker Compose**: Multi-container orchestration
-- **PostgreSQL**: Database container
+- **PostgreSQL 15**: Database container
+- **Nginx**: Reverse proxy (optioneel)
 
 ## 📋 Vereisten
 
 - Docker en Docker Compose
 - OpenAI API key
 - Minimaal 4GB RAM
+- 10GB vrije schijfruimte
 
 ## 🚀 Snelle Start
 
 ### 1. Clone Repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/themeuze/ragopmaat.git
 cd ragopmaat
 ```
 
-### 2. Environment Setup
+### 2. Automatische Installatie
 ```bash
-# Maak .env bestand
-echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
-```
+# Maak script uitvoerbaar
+chmod +x install.sh
 
-### 3. Start Applicatie
-```bash
-# Automatische installatie
+# Start installatie
 ./install.sh
-
-# Of handmatig
-docker-compose up -d --build
 ```
 
-### 4. Admin Gebruiker
+### 3. Handmatige Installatie
 ```bash
+# Environment setup
+cp env.example .env
+# Bewerk .env en voeg je OpenAI API key toe
+
+# Start applicatie
+docker-compose up -d --build
+
+# Maak admin gebruiker
 docker-compose exec backend python create_admin_user.py
 ```
 
-### 5. Open Applicatie
+### 4. Open Applicatie
 - **Frontend**: http://localhost:3001
+- **Backend API**: http://localhost:8001
+- **API Docs**: http://localhost:8001/docs
 - **Admin Login**: admin@ragopmaat.nl / Admin123!
 
 ## 📊 Database Schema
@@ -174,6 +183,7 @@ CREATE TABLE queries (
 - **CORS Protection**: Cross-origin resource sharing beveiliging
 - **Input Validation**: Pydantic modellen voor data validatie
 - **SQL Injection Protection**: SQLAlchemy ORM bescherming
+- **Environment Variables**: Gevoelige data buiten code
 
 ## 📡 API Endpoints
 
@@ -184,4 +194,78 @@ CREATE TABLE queries (
 
 ### Documents
 - `POST /api/upload` - Upload document
-- `
+- `GET /api/documents` - Lijst van documenten
+- `DELETE /api/documents/{id}` - Verwijder document
+
+### Queries
+- `POST /api/query` - Stel vraag over documenten
+- `GET /api/queries` - Query geschiedenis
+
+### Admin (Admin only)
+- `GET /api/admin/users` - Alle gebruikers
+- `PUT /api/admin/users/{id}` - Update gebruiker
+- `POST /api/admin/users/{id}/extend-trial` - Verleng trial
+
+## 🚀 Deployment
+
+### Productie Deployment
+```bash
+# Gebruik deploy script
+./deploy.sh
+
+# Of handmatig
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Backup & Restore
+```bash
+# Backup database
+./backup.sh
+
+# Restore database
+./restore.sh backup_file.sql
+```
+
+## 📝 Scripts
+
+- `install.sh` - Volledige installatie
+- `deploy.sh` - Productie deployment
+- `backup.sh` - Database backup
+- `restore.sh` - Database restore
+- `create_admin_user.py` - Admin gebruiker aanmaken
+
+## 🤝 Bijdragen
+
+1. Fork het project
+2. Maak een feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit je wijzigingen (`git commit -m 'Add some AmazingFeature'`)
+4. Push naar de branch (`git push origin feature/AmazingFeature`)
+5. Open een Pull Request
+
+## 📄 Licentie
+
+Dit project is eigendom van RAG Op Maat. Alle rechten voorbehouden.
+
+## 📞 Contact
+
+- **Email**: info@ragopmaat.nl
+- **Website**: https://ragopmaat.nl
+- **GitHub**: https://github.com/themeuze/ragopmaat
+
+## 🔄 Changelog
+
+### v2.0.0 (Huidig)
+- ✅ JWT Authentication systeem
+- ✅ PostgreSQL database integratie
+- ✅ Admin dashboard met gebruikersbeheer
+- ✅ Abonnement systeem (Basic, Premium, White Label)
+- ✅ 14-dagen trial systeem
+- ✅ Zakelijke White Label styling
+- ✅ Verbeterde security features
+- ✅ Backup en restore functionaliteit
+
+### v1.0.0
+- ✅ Basis RAG functionaliteit
+- ✅ Document upload en processing
+- ✅ AI Q&A systeem
+- ✅ Frontend interface
